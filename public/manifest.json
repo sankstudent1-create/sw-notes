@@ -1,0 +1,43 @@
+{
+  "name": "SW Notes",
+  "short_name": "SW Notes",
+  "description": "Your Notebook. Smarter. A cognitive-psychology-driven learning platform.",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "theme_color": "#F9F6F0",
+  "background_color": "#F9F6F0",
+  "display": "standalone",
+  "start_url": "/",
+  "shortcuts": [
+    {
+      "name": "New Note",
+      "short_name": "New Note",
+      "description": "Create a new note",
+      "url": "/notes/new",
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Today's Revision",
+      "short_name": "Revision",
+      "description": "View today's revision queue",
+      "url": "/revision",
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
+    }
+  ]
+}
