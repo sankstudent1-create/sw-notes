@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { RichEditor } from "@/components/editor/RichEditor";
-import { ArrowLeft, Save, Sparkles, MoreVertical, Share2, Clock } from "lucide-react";
+import { ArrowLeft, Save, MoreVertical, Share2, Clock, Download } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import html2pdf from "html2pdf.js";
 
 export default function NoteEditorPage() {
   const params = useParams();
@@ -16,6 +17,8 @@ export default function NoteEditorPage() {
   const supabase = createClient();
   const noteId = params.id as string;
   
+  const editorRef = useRef<HTMLDivElement>(null);
+
   const [note, setNote] = useState<any>(null);
   const [notebook, setNotebook] = useState<any>(null);
   const [subject, setSubject] = useState<any>(null);
@@ -23,7 +26,6 @@ export default function NoteEditorPage() {
 
   const [content, setContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
   const [isFlashcardModalOpen, setIsFlashcardModalOpen] = useState(false);
   const [fcFront, setFcFront] = useState("");
   const [fcBack, setFcBack] = useState("");
@@ -121,13 +123,27 @@ export default function NoteEditorPage() {
 
       if (error) throw error;
       
-      // Update local state to reflect new update time
       setNote({ ...note, updated_at: new Date().toISOString() });
     } catch (e) {
       console.error(e);
     } finally {
       setTimeout(() => setIsSaving(false), 800);
     }
+  };
+
+  const handleDownloadPDF = () => {
+    if (!editorRef.current) return;
+    
+    const element = editorRef.current;
+    const opt = {
+      margin:       1,
+      filename:     `${note?.title || 'Note'}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true },
+      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+    };
+
+    html2pdf().set(opt).from(element).save();
   };
 
   if (isLoading && !note) return <div className="p-8">Loading note...</div>;
@@ -164,15 +180,17 @@ export default function NoteEditorPage() {
             <span className="hidden sm:inline">+ Flashcard</span>
             <span className="sm:hidden">+</span>
           </Button>
+          
           <Button 
             variant="ghost" 
-            className="text-[var(--amber)] hover:text-orange-600 dark:hover:text-orange-400 bg-orange-50 dark:bg-orange-900/20"
-            onClick={() => setIsAIPanelOpen(true)}
+            size="sm"
+            className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] hidden sm:inline-flex"
+            onClick={handleDownloadPDF}
           >
-            <Sparkles className="w-4 h-4 mr-2 hidden sm:block" />
-            <Sparkles className="w-4 h-4 sm:hidden" />
-            <span className="hidden sm:inline">AI Study Tools</span>
+            <Download className="w-4 h-4 mr-2" />
+            PDF Export
           </Button>
+          
           <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1 hidden sm:block"></div>
           <Button variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={handleSave}>
             <Save className="w-4 h-4 mr-2" />
@@ -185,40 +203,14 @@ export default function NoteEditorPage() {
 
       {/* Editor Workspace */}
       <div className="flex-1 overflow-hidden p-4 md:p-8 max-w-5xl mx-auto w-full">
-        <RichEditor 
-          content={content} 
-          onChange={setContent} 
-        />
-      </div>
-
-      {/* AI Panel Modal */}
-      <Modal isOpen={isAIPanelOpen} onClose={() => setIsAIPanelOpen(false)} title="AI Study Assistant">
-        <div className="space-y-4">
-          <p className="text-[var(--text-secondary)] text-sm mb-4">
-            What would you like to do with this note? (Simulated for now)
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {[
-              { title: "Summarize", desc: "Get a one-page quick revision sheet", color: "sage" },
-              { title: "Generate Flashcards", desc: "Create spaced repetition cards", color: "amber" },
-              { title: "Create Quiz", desc: "Test your knowledge with an MCQ", color: "terracotta" },
-              { title: "Mind Map", desc: "Visualize concepts and relations", color: "lavender" },
-            ].map((tool, i) => (
-              <button 
-                key={i} 
-                onClick={() => alert('AI Features are simulated in this offline demo.')}
-                className="text-left p-4 rounded-[var(--radius-card)] border border-[var(--paper)] hover:border-[var(--accent)] hover:shadow-[var(--shadow-soft)] transition-all bg-[var(--background)] group"
-              >
-                <h3 className={`font-semibold text-[var(--${tool.color})] flex items-center`}>
-                  <Sparkles className="w-4 h-4 mr-2 opacity-70 group-hover:opacity-100" />
-                  {tool.title}
-                </h3>
-                <p className="text-xs text-[var(--text-secondary)] mt-1">{tool.desc}</p>
-              </button>
-            ))}
-          </div>
+        {/* We attach the ref to the container we want to export */}
+        <div ref={editorRef} className="h-full print:p-8 print:bg-white print:text-black">
+          <RichEditor 
+            content={content} 
+            onChange={setContent} 
+          />
         </div>
-      </Modal>
+      </div>
 
       {/* Manual Flashcard Modal */}
       <Modal isOpen={isFlashcardModalOpen} onClose={() => setIsFlashcardModalOpen(false)} title="Create Flashcard">

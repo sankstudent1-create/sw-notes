@@ -18,9 +18,7 @@ const navItems = [
   { name: "Dashboard", href: "/dashboard", icon: BookOpen },
   { name: "Subjects", href: "/subjects", icon: Library },
   { name: "Revision Hub", href: "/revision", icon: Layers },
-  { name: "AI Tools", href: "/ai-tools", icon: BrainCircuit },
   { name: "Flashcards", href: "/flashcards", icon: Layers },
-  { name: "Search", href: "/search", icon: Search },
 ];
 
 const bottomNavItems = [

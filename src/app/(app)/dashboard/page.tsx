@@ -11,8 +11,13 @@ export default function DashboardPage() {
   const router = useRouter();
   const supabase = createClient();
 
+  const [user, setUser] = useState<any>(null);
   const [subjects, setSubjects] = useState<any[]>([]);
   const [dueCards, setDueCards] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    notebooks: 0,
+    notes: 0
+  });
   const [isLoading, setIsLoading] = useState(true);
 
   const loadData = useCallback(async () => {
@@ -22,6 +27,7 @@ export default function DashboardPage() {
       router.push('/login');
       return;
     }
+    setUser(user);
 
     const { data: subjectsData } = await supabase
       .from('subjects')
@@ -37,6 +43,17 @@ export default function DashboardPage() {
       .lte('next_review_date', now);
 
     setDueCards(cardsData || []);
+
+    const [{ count: notebookCount }, { count: noteCount }] = await Promise.all([
+      supabase.from('notebooks').select('*', { count: 'exact', head: true }),
+      supabase.from('notes').select('*', { count: 'exact', head: true })
+    ]);
+
+    setStats({
+      notebooks: notebookCount || 0,
+      notes: noteCount || 0
+    });
+
     setIsLoading(false);
   }, [router, supabase]);
 
@@ -50,8 +67,8 @@ export default function DashboardPage() {
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
       {/* Greeting Section */}
       <div>
-        <h1 className="text-3xl font-bold font-heading text-[var(--text-primary)]">Welcome back, Student!</h1>
-        <p className="text-[var(--text-secondary)] mt-1">You have a 12-day streak going. Keep it up!</p>
+        <h1 className="text-3xl font-bold font-heading text-[var(--text-primary)]">Welcome back, {user?.email?.split('@')[0] || "Student"}!</h1>
+        <p className="text-[var(--text-secondary)] mt-1">Here is an overview of your notes.</p>
       </div>
 
       {/* Quick Stats Grid */}
@@ -81,8 +98,8 @@ export default function DashboardPage() {
             <Target className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-sm font-medium text-[var(--text-secondary)]">Quizzes Taken</p>
-            <p className="text-2xl font-bold font-heading text-[var(--text-primary)]">0</p>
+            <p className="text-sm font-medium text-[var(--text-secondary)]">Notebooks</p>
+            <p className="text-2xl font-bold font-heading text-[var(--text-primary)]">{stats.notebooks}</p>
           </div>
         </Card>
 
@@ -91,8 +108,8 @@ export default function DashboardPage() {
             <Clock className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-sm font-medium text-[var(--text-secondary)]">Hours Studied</p>
-            <p className="text-2xl font-bold font-heading text-[var(--text-primary)]">24.5</p>
+            <p className="text-sm font-medium text-[var(--text-secondary)]">Total Notes</p>
+            <p className="text-2xl font-bold font-heading text-[var(--text-primary)]">{stats.notes}</p>
           </div>
         </Card>
       </div>
@@ -113,8 +130,7 @@ export default function DashboardPage() {
                 <Card hoverable className="p-5 border-l-4" style={{ borderLeftColor: `var(--color-${subject.color})` }}>
                   <h3 className="font-bold text-[var(--text-primary)] mb-1">{subject.name}</h3>
                   <div className="flex justify-between text-sm text-[var(--text-secondary)]">
-                    <span>Notebooks</span>
-                    <span>Updated today</span>
+                    <span>Notebooks inside</span>
                   </div>
                 </Card>
               </Link>
@@ -135,7 +151,7 @@ export default function DashboardPage() {
             <div className="absolute top-0 right-0 w-24 h-24 bg-[var(--terracotta)]/10 rounded-full -mr-8 -mt-8"></div>
             <h3 className="font-bold text-lg text-[var(--text-primary)] relative z-10 mb-2">Daily Revision</h3>
             <p className="text-sm text-[var(--text-secondary)] relative z-10 mb-4">
-              You have {dueCards.length} flashcards due for review. Keeping up with reviews improves retention by 40%.
+              You have {dueCards.length} flashcards due for review. Keeping up with reviews improves retention.
             </p>
             <Link href="/flashcards" className="inline-block w-full">
               <button className="w-full bg-[var(--terracotta)] hover:bg-orange-600 text-white font-medium py-2 rounded-[var(--radius-button)] transition-colors relative z-10">
