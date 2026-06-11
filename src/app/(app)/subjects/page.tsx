@@ -2,38 +2,71 @@
 
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Plus, BookOpen, MoreVertical, Trash2, Edit3, Settings } from "lucide-react";
+import { Plus, BookOpen, MoreVertical } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/schema";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 
 export default function SubjectsPage() {
+  const router = useRouter();
+  const supabase = createClient();
+
   const [isNewSubjectModalOpen, setIsNewSubjectModalOpen] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState("");
   const [newSubjectColor, setNewSubjectColor] = useState("sage");
   const [isCreating, setIsCreating] = useState(false);
+  
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const subjects = useLiveQuery(() => db.subjects.toArray(), []) || [];
-  // Use a separate query to get counts or simply just assume 0 for now
-  // Real implementation would join or do a count query per subject.
-  // For simplicity, we just display the subjects.
+  const loadSubjects = async () => {
+    setIsLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('subjects')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error(error);
+    } else {
+      setSubjects(data || []);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    loadSubjects();
+  }, []);
 
   const handleCreateSubject = async () => {
     if (!newSubjectName.trim()) return;
     setIsCreating(true);
     try {
-      await db.subjects.add({
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase.from('subjects').insert({
+        user_id: user.id,
         name: newSubjectName,
         color: newSubjectColor,
         icon: "BookOpen",
         archived: false,
-        createdAt: new Date()
       });
+
+      if (error) throw error;
+
       setIsNewSubjectModalOpen(false);
       setNewSubjectName("");
+      loadSubjects(); // Reload data
     } catch (e) {
       console.error("Failed to create subject", e);
     } finally {
@@ -55,7 +88,9 @@ export default function SubjectsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {subjects.map((subject) => (
+        {isLoading ? (
+          <div className="col-span-full py-12 text-center text-gray-500">Loading subjects...</div>
+        ) : subjects.map((subject) => (
           <Link key={subject.id} href={`/subjects/${subject.id}`}>
             <Card hoverable className="p-0 overflow-hidden border-t-8 h-full flex flex-col" style={{ borderTopColor: `var(--color-${subject.color})` }}>
               <div className="p-6 flex-1 flex flex-col">
@@ -76,7 +111,7 @@ export default function SubjectsPage() {
             </Card>
           </Link>
         ))}
-        {subjects.length === 0 && (
+        {!isLoading && subjects.length === 0 && (
           <div className="col-span-full py-12 text-center text-[var(--text-secondary)] border-2 border-dashed border-[var(--paper)] rounded-2xl">
             No subjects yet. Click "New Subject" to create one.
           </div>

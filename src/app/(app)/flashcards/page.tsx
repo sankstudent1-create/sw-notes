@@ -1,24 +1,51 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { FlashCard } from "@/components/study/FlashCard";
 import { Progress } from "@/components/ui/Progress";
 import { Layers, Flame, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/schema";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 
 export default function FlashcardsPage() {
+  const router = useRouter();
+  const supabase = createClient();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sessionComplete, setSessionComplete] = useState(false);
+  
+  const [dueCards, setDueCards] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load all flashcards due today or earlier
-  const now = new Date();
-  const dueCards = useLiveQuery(() => 
-    db.flashcards.where('nextReviewDate').belowOrEqual(now).toArray()
-  , []) || [];
+  const loadDueCards = useCallback(async () => {
+    setIsLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    
+    const { data, error } = await supabase
+      .from('flashcards')
+      .select('*')
+      .lte('next_review_date', now)
+      .order('next_review_date', { ascending: true });
+
+    if (error) {
+      console.error(error);
+    } else {
+      setDueCards(data || []);
+    }
+    setIsLoading(false);
+  }, [router, supabase]);
+
+  useEffect(() => {
+    loadDueCards();
+  }, [loadDueCards]);
 
   const handleResult = async (difficulty: "again" | "hard" | "good" | "easy") => {
     if (dueCards.length === 0) return;
@@ -26,7 +53,7 @@ export default function FlashcardsPage() {
     if (!card || !card.id) return;
 
     // Basic SM-2 Implementation
-    let { interval, repetitions, easeFactor } = card;
+    let { interval, repetitions, ease_factor: easeFactor } = card;
 
     if (difficulty === "again") {
       repetitions = 0;
@@ -54,22 +81,26 @@ export default function FlashcardsPage() {
     const nextReviewDate = new Date();
     nextReviewDate.setDate(nextReviewDate.getDate() + interval);
 
-    await db.flashcards.update(card.id, {
-      interval,
-      repetitions,
-      easeFactor,
-      nextReviewDate,
-      difficulty: q
-    });
+    try {
+      await supabase.from('flashcards').update({
+        interval,
+        repetitions,
+        ease_factor: easeFactor,
+        next_review_date: nextReviewDate.toISOString(),
+        difficulty: q
+      }).eq('id', card.id);
 
-    if (currentIndex < dueCards.length - 1) {
-      setCurrentIndex(c => c + 1);
-    } else {
-      setSessionComplete(true);
+      if (currentIndex < dueCards.length - 1) {
+        setCurrentIndex(c => c + 1);
+      } else {
+        setSessionComplete(true);
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  if (!dueCards) return <div className="p-8">Loading cards...</div>;
+  if (isLoading) return <div className="p-8">Loading cards...</div>;
 
   if (dueCards.length === 0) {
     return (

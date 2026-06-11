@@ -3,18 +3,46 @@
 import { Card } from "@/components/ui/Card";
 import { Progress } from "@/components/ui/Progress";
 import { Badge } from "@/components/ui/Badge";
-import { Calendar as CalendarIcon, CheckCircle2, ChevronRight, Flame, Trophy } from "lucide-react";
+import { Calendar as CalendarIcon, CheckCircle2, ChevronRight, Flame, Trophy, Layers } from "lucide-react";
 import Link from "next/link";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/schema";
+import { useState, useEffect, useCallback } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 
 export default function RevisionPage() {
-  const now = new Date();
-  const dueCards = useLiveQuery(() => db.flashcards.where('nextReviewDate').belowOrEqual(now).toArray(), []) || [];
+  const router = useRouter();
+  const supabase = createClient();
+  
+  const [dueCards, setDueCards] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const { data: cardsData } = await supabase
+      .from('flashcards')
+      .select('*')
+      .lte('next_review_date', now);
+
+    setDueCards(cardsData || []);
+    setIsLoading(false);
+  }, [router, supabase]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
   
   // Create a 7-day consistency mock array, representing days
   const today = new Date().getDay();
   const weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+  if (isLoading) return <div className="p-8">Loading revision hub...</div>;
 
   return (
     <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-8">

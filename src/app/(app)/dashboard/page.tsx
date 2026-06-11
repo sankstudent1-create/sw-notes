@@ -1,17 +1,50 @@
 "use client";
 
 import { Card } from "@/components/ui/Card";
-import { Progress } from "@/components/ui/Progress";
 import { BookOpen, Layers, Target, Clock, ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/schema";
+import { useState, useEffect, useCallback } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 
 export default function DashboardPage() {
-  const subjects = useLiveQuery(() => db.subjects.toArray(), []) || [];
-  
-  const now = new Date();
-  const dueCards = useLiveQuery(() => db.flashcards.where('nextReviewDate').belowOrEqual(now).toArray(), []) || [];
+  const router = useRouter();
+  const supabase = createClient();
+
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [dueCards, setDueCards] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    const { data: subjectsData } = await supabase
+      .from('subjects')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    setSubjects(subjectsData || []);
+
+    const now = new Date().toISOString();
+    const { data: cardsData } = await supabase
+      .from('flashcards')
+      .select('*')
+      .lte('next_review_date', now);
+
+    setDueCards(cardsData || []);
+    setIsLoading(false);
+  }, [router, supabase]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  if (isLoading) return <div className="p-8">Loading dashboard...</div>;
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">

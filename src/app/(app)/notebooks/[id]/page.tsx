@@ -1,47 +1,97 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft, Bookmark, MoreVertical, Search, Plus, List } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { useParams, useRouter } from "next/navigation";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/schema";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
+import { createClient } from "@/lib/supabase/client";
 
 export default function NotebookPage() {
   const params = useParams();
   const router = useRouter();
-  const notebookId = Number(params.id);
+  const supabase = createClient();
+  const notebookId = params.id as string;
   
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newNoteTitle, setNewNoteTitle] = useState("");
 
-  const notebook = useLiveQuery(() => db.notebooks.get(notebookId), [notebookId]);
-  const notes = useLiveQuery(() => db.notes.where({ notebookId }).sortBy('createdAt'), [notebookId]) || [];
+  const [notebook, setNotebook] = useState<any>(null);
+  const [notes, setNotes] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    const { data: notebookData, error: notebookError } = await supabase
+      .from('notebooks')
+      .select('*')
+      .eq('id', notebookId)
+      .single();
+
+    if (notebookError) {
+      console.error(notebookError);
+      setIsLoading(false);
+      return;
+    }
+
+    setNotebook(notebookData);
+
+    const { data: notesData, error: notesError } = await supabase
+      .from('notes')
+      .select('*')
+      .eq('notebook_id', notebookId)
+      .order('created_at', { ascending: true });
+
+    if (!notesError) {
+      setNotes(notesData || []);
+    }
+    
+    setIsLoading(false);
+  }, [notebookId, router, supabase]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleCreateNote = async () => {
     if (!newNoteTitle.trim()) return;
     try {
-      const id = await db.notes.add({
-        notebookId,
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase.from('notes').insert({
+        notebook_id: notebookId,
+        user_id: user.id,
         title: newNoteTitle,
         content: `<h1>${newNoteTitle}</h1><p>Start writing here...</p>`,
         tags: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
+      }).select('id').single();
+
+      if (error) throw error;
+
       setIsModalOpen(false);
       setNewNoteTitle("");
-      router.push(`/notes/${id}`);
+      if (data) {
+        router.push(`/notes/${data.id}`);
+      } else {
+        loadData();
+      }
     } catch (e) {
       console.error(e);
     }
   };
 
-  if (!notebook) return <div className="p-8">Loading notebook...</div>;
+  if (isLoading && !notebook) return <div className="p-8">Loading notebook...</div>;
+  if (!notebook) return <div className="p-8">Notebook not found.</div>;
 
   return (
     <div className="flex h-full relative">
@@ -60,7 +110,7 @@ export default function NotebookPage() {
                 <h4 className="font-medium text-sm text-[var(--text-primary)] line-clamp-2">{note.title}</h4>
                 <Bookmark className="w-3 h-3 text-gray-400 shrink-0 mt-1" />
               </div>
-              <p className="text-xs text-gray-500 mt-1">{note.createdAt.toLocaleDateString()}</p>
+              <p className="text-xs text-gray-500 mt-1">{new Date(note.created_at || note.createdAt).toLocaleDateString()}</p>
             </Link>
           ))}
           {notes.length === 0 && (
@@ -77,7 +127,7 @@ export default function NotebookPage() {
             <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 mr-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
               <List className="w-5 h-5" />
             </button>
-            <Link href={`/subjects/${notebook.subjectId}`} className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
+            <Link href={`/subjects/${notebook.subject_id || notebook.subjectId}`} className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <h2 className="ml-2 font-title text-2xl font-bold text-[var(--text-primary)] line-clamp-1">{notebook.title}</h2>
@@ -106,11 +156,11 @@ export default function NotebookPage() {
                     <h3 className="text-xl font-bold font-heading text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors">
                       {note.title}
                     </h3>
-                    <span className="text-sm font-heading text-gray-500">{note.createdAt.toLocaleDateString()}</span>
+                    <span className="text-sm font-heading text-gray-500">{new Date(note.created_at || note.createdAt).toLocaleDateString()}</span>
                   </div>
                   {/* Extract plain text from HTML content (naively) for preview */}
                   <p className="text-[var(--text-secondary)] text-sm font-body line-clamp-2">
-                    {note.content.replace(/<[^>]*>?/gm, '')}
+                    {(note.content || "").replace(/<[^>]*>?/gm, '')}
                   </p>
                 </div>
               </Link>

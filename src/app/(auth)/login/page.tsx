@@ -7,17 +7,37 @@ import { Input } from "@/components/ui/Input";
 import { Card } from "@/components/ui/Card";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
+  const supabase = createClient();
   const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  const handleDemoLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setTimeout(() => {
+    setError(null);
+    
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        throw error;
+      }
+
       router.push("/dashboard");
-    }, 1000);
+    } catch (err: any) {
+      setError(err.message || "Failed to log in");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -30,18 +50,27 @@ export default function LoginPage() {
         <p className="text-[var(--text-secondary)] text-sm mt-2">Log in to continue studying</p>
       </div>
 
-      <form onSubmit={handleDemoLogin} className="space-y-4">
+      <form onSubmit={handleLogin} className="space-y-4">
+        {error && (
+          <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm rounded-md">
+            {error}
+          </div>
+        )}
         <Input 
           label="Email address" 
           type="email" 
           placeholder="student@school.edu" 
           required 
+          value={email}
+          onChange={e => setEmail(e.target.value)}
         />
         <Input 
           label="Password" 
           type="password" 
           placeholder="••••••••" 
           required 
+          value={password}
+          onChange={e => setPassword(e.target.value)}
         />
         
         <div className="flex items-center justify-between text-sm">
@@ -53,7 +82,7 @@ export default function LoginPage() {
         </div>
 
         <Button type="submit" className="w-full" size="lg" isLoading={isLoading}>
-          Log In (Demo)
+          Log In
         </Button>
       </form>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { RichEditor } from "@/components/editor/RichEditor";
 import { ArrowLeft, Save, Sparkles, MoreVertical, Share2, Clock } from "lucide-react";
 import Link from "next/link";
@@ -8,36 +8,121 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { useParams, useRouter } from "next/navigation";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/schema";
+import { createClient } from "@/lib/supabase/client";
 
 export default function NoteEditorPage() {
   const params = useParams();
-  const noteId = Number(params.id);
+  const router = useRouter();
+  const supabase = createClient();
+  const noteId = params.id as string;
   
-  const note = useLiveQuery(() => db.notes.get(noteId), [noteId]);
-  const notebook = useLiveQuery(() => note ? db.notebooks.get(note.notebookId) : undefined, [note]);
-  const subject = useLiveQuery(() => notebook ? db.subjects.get(notebook.subjectId) : undefined, [notebook]);
+  const [note, setNote] = useState<any>(null);
+  const [notebook, setNotebook] = useState<any>(null);
+  const [subject, setSubject] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [content, setContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
+  const [isFlashcardModalOpen, setIsFlashcardModalOpen] = useState(false);
+  const [fcFront, setFcFront] = useState("");
+  const [fcBack, setFcBack] = useState("");
 
-  // Load initial content
-  useEffect(() => {
-    if (note && !content) {
-      setContent(note.content);
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/login');
+      return;
     }
-  }, [note]);
+
+    const { data: noteData, error: noteError } = await supabase
+      .from('notes')
+      .select('*')
+      .eq('id', noteId)
+      .single();
+
+    if (noteError) {
+      console.error(noteError);
+      setIsLoading(false);
+      return;
+    }
+
+    setNote(noteData);
+    setContent(noteData.content || "");
+
+    const { data: notebookData } = await supabase
+      .from('notebooks')
+      .select('*')
+      .eq('id', noteData.notebook_id)
+      .single();
+
+    if (notebookData) {
+      setNotebook(notebookData);
+
+      const { data: subjectData } = await supabase
+        .from('subjects')
+        .select('*')
+        .eq('id', notebookData.subject_id)
+        .single();
+      
+      if (subjectData) {
+        setSubject(subjectData);
+      }
+    }
+    
+    setIsLoading(false);
+  }, [noteId, router, supabase]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleCreateFlashcard = async () => {
+    if (!fcFront.trim() || !fcBack.trim() || !note) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase.from('flashcards').insert({
+        note_id: noteId,
+        user_id: user.id,
+        front: fcFront,
+        back: fcBack,
+        difficulty: 0,
+        next_review_date: new Date().toISOString(),
+        interval: 1,
+        repetitions: 0,
+        ease_factor: 2.5
+      });
+
+      if (error) throw error;
+
+      setIsFlashcardModalOpen(false);
+      setFcFront("");
+      setFcBack("");
+      alert("Flashcard created and added to your review queue!");
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const handleSave = async () => {
     if (!note) return;
     setIsSaving(true);
     try {
-      await db.notes.update(note.id!, {
-        content,
-        updatedAt: new Date()
-      });
+      const { error } = await supabase
+        .from('notes')
+        .update({
+          content,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', note.id);
+
+      if (error) throw error;
+      
+      // Update local state to reflect new update time
+      setNote({ ...note, updated_at: new Date().toISOString() });
     } catch (e) {
       console.error(e);
     } finally {
@@ -45,14 +130,15 @@ export default function NoteEditorPage() {
     }
   };
 
-  if (!note) return <div className="p-8">Loading note...</div>;
+  if (isLoading && !note) return <div className="p-8">Loading note...</div>;
+  if (!note) return <div className="p-8">Note not found.</div>;
 
   return (
     <div className="flex flex-col h-full bg-[var(--background)]">
       {/* Top Header */}
       <div className="h-16 border-b border-[var(--paper)] bg-[var(--card)] px-4 flex items-center justify-between shrink-0 sticky top-0 z-10 shadow-sm">
         <div className="flex items-center space-x-4">
-          <Link href={`/notebooks/${note.notebookId}`} className="p-2 -ml-2 rounded-full text-gray-500 hover:text-[var(--text-primary)] hover:bg-[var(--paper)] transition-colors">
+          <Link href={`/notebooks/${note.notebook_id || note.notebookId}`} className="p-2 -ml-2 rounded-full text-gray-500 hover:text-[var(--text-primary)] hover:bg-[var(--paper)] transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
@@ -64,12 +150,20 @@ export default function NoteEditorPage() {
             </div>
             <div className="flex items-center text-xs text-gray-400 mt-0.5">
               <Clock className="w-3 h-3 mr-1" />
-              {isSaving ? "Saving..." : `Last edited ${note.updatedAt.toLocaleDateString()}`}
+              {isSaving ? "Saving..." : `Last edited ${new Date(note.updated_at || note.updatedAt).toLocaleDateString()}`}
             </div>
           </div>
         </div>
 
         <div className="flex items-center space-x-2">
+          <Button 
+            variant="ghost" 
+            className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            onClick={() => setIsFlashcardModalOpen(true)}
+          >
+            <span className="hidden sm:inline">+ Flashcard</span>
+            <span className="sm:hidden">+</span>
+          </Button>
           <Button 
             variant="ghost" 
             className="text-[var(--amber)] hover:text-orange-600 dark:hover:text-orange-400 bg-orange-50 dark:bg-orange-900/20"
@@ -122,6 +216,34 @@ export default function NoteEditorPage() {
                 <p className="text-xs text-[var(--text-secondary)] mt-1">{tool.desc}</p>
               </button>
             ))}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Manual Flashcard Modal */}
+      <Modal isOpen={isFlashcardModalOpen} onClose={() => setIsFlashcardModalOpen(false)} title="Create Flashcard">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">Front (Question)</label>
+            <textarea 
+              className="w-full rounded-[var(--radius-card)] border border-gray-300 dark:border-gray-700 bg-[var(--background)] px-4 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] min-h-[80px]"
+              placeholder="e.g. What is Newton's First Law?"
+              value={fcFront}
+              onChange={(e) => setFcFront(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1">Back (Answer)</label>
+            <textarea 
+              className="w-full rounded-[var(--radius-card)] border border-gray-300 dark:border-gray-700 bg-[var(--background)] px-4 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] min-h-[80px]"
+              placeholder="e.g. An object at rest stays at rest..."
+              value={fcBack}
+              onChange={(e) => setFcBack(e.target.value)}
+            />
+          </div>
+          <div className="pt-4 flex justify-end space-x-3">
+            <Button variant="ghost" onClick={() => setIsFlashcardModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateFlashcard}>Create Card</Button>
           </div>
         </div>
       </Modal>
