@@ -1,39 +1,70 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { RichEditor } from "@/components/editor/RichEditor";
-import { ArrowLeft, Save, Sparkles, MoreVertical, Share2, Download, Trash2, Clock } from "lucide-react";
+import { ArrowLeft, Save, Sparkles, MoreVertical, Share2, Clock } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
+import { useParams, useRouter } from "next/navigation";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/db/schema";
 
 export default function NoteEditorPage() {
-  const [content, setContent] = useState("<h1>First Law of Thermodynamics</h1><p>The first law of thermodynamics is a version of the law of conservation of energy, adapted for thermodynamic processes.</p><ul><li>In general, the conservation law states that the total energy of an isolated system is constant; energy can be transformed from one form to another, but can be neither created nor destroyed.</li></ul>");
+  const params = useParams();
+  const noteId = Number(params.id);
+  
+  const note = useLiveQuery(() => db.notes.get(noteId), [noteId]);
+  const notebook = useLiveQuery(() => note ? db.notebooks.get(note.notebookId) : undefined, [note]);
+  const subject = useLiveQuery(() => notebook ? db.subjects.get(notebook.subjectId) : undefined, [notebook]);
+
+  const [content, setContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
 
-  const handleSave = () => {
+  // Load initial content
+  useEffect(() => {
+    if (note && !content) {
+      setContent(note.content);
+    }
+  }, [note]);
+
+  const handleSave = async () => {
+    if (!note) return;
     setIsSaving(true);
-    setTimeout(() => setIsSaving(false), 800);
+    try {
+      await db.notes.update(note.id!, {
+        content,
+        updatedAt: new Date()
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setTimeout(() => setIsSaving(false), 800);
+    }
   };
+
+  if (!note) return <div className="p-8">Loading note...</div>;
 
   return (
     <div className="flex flex-col h-full bg-[var(--background)]">
       {/* Top Header */}
       <div className="h-16 border-b border-[var(--paper)] bg-[var(--card)] px-4 flex items-center justify-between shrink-0 sticky top-0 z-10 shadow-sm">
         <div className="flex items-center space-x-4">
-          <Link href="/notebooks/1" className="p-2 -ml-2 rounded-full text-gray-500 hover:text-[var(--text-primary)] hover:bg-[var(--paper)] transition-colors">
+          <Link href={`/notebooks/${note.notebookId}`} className="p-2 -ml-2 rounded-full text-gray-500 hover:text-[var(--text-primary)] hover:bg-[var(--paper)] transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
             <div className="flex items-center space-x-2">
-              <h1 className="font-heading font-bold text-lg text-[var(--text-primary)]">Thermodynamics / First Law</h1>
-              <Badge variant="sage">Physics</Badge>
+              <h1 className="font-heading font-bold text-lg text-[var(--text-primary)] truncate max-w-[200px] sm:max-w-md">
+                {notebook?.title || "..."} / {note.title}
+              </h1>
+              {subject && <Badge variant={subject.color as any}>{subject.name}</Badge>}
             </div>
             <div className="flex items-center text-xs text-gray-400 mt-0.5">
               <Clock className="w-3 h-3 mr-1" />
-              {isSaving ? "Saving..." : "Saved just now"}
+              {isSaving ? "Saving..." : `Last edited ${note.updatedAt.toLocaleDateString()}`}
             </div>
           </div>
         </div>
@@ -44,8 +75,9 @@ export default function NoteEditorPage() {
             className="text-[var(--amber)] hover:text-orange-600 dark:hover:text-orange-400 bg-orange-50 dark:bg-orange-900/20"
             onClick={() => setIsAIPanelOpen(true)}
           >
-            <Sparkles className="w-4 h-4 mr-2" />
-            AI Study Tools
+            <Sparkles className="w-4 h-4 mr-2 hidden sm:block" />
+            <Sparkles className="w-4 h-4 sm:hidden" />
+            <span className="hidden sm:inline">AI Study Tools</span>
           </Button>
           <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1 hidden sm:block"></div>
           <Button variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={handleSave}>
@@ -69,7 +101,7 @@ export default function NoteEditorPage() {
       <Modal isOpen={isAIPanelOpen} onClose={() => setIsAIPanelOpen(false)} title="AI Study Assistant">
         <div className="space-y-4">
           <p className="text-[var(--text-secondary)] text-sm mb-4">
-            What would you like to do with this note?
+            What would you like to do with this note? (Simulated for now)
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[
@@ -80,6 +112,7 @@ export default function NoteEditorPage() {
             ].map((tool, i) => (
               <button 
                 key={i} 
+                onClick={() => alert('AI Features are simulated in this offline demo.')}
                 className="text-left p-4 rounded-[var(--radius-card)] border border-[var(--paper)] hover:border-[var(--accent)] hover:shadow-[var(--shadow-soft)] transition-all bg-[var(--background)] group"
               >
                 <h3 className={`font-semibold text-[var(--${tool.color})] flex items-center`}>

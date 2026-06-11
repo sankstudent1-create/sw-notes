@@ -4,15 +4,44 @@ import { useState } from "react";
 import { ArrowLeft, Bookmark, MoreVertical, Search, Plus, List } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
-
-const MOCK_NOTES = [
-  { id: 1, title: "Zeroth Law & Temperature", date: "Oct 12, 2026", preview: "If body A is in thermal equilibrium with body B..." },
-  { id: 2, title: "First Law: Energy Conservation", date: "Oct 14, 2026", preview: "The internal energy of an isolated system is constant..." },
-  { id: 3, title: "Entropy & Second Law", date: "Oct 18, 2026", preview: "Heat cannot spontaneously flow from a colder location to a hotter location." },
-];
+import { useParams, useRouter } from "next/navigation";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/db/schema";
+import { Modal } from "@/components/ui/Modal";
+import { Input } from "@/components/ui/Input";
 
 export default function NotebookPage() {
+  const params = useParams();
+  const router = useRouter();
+  const notebookId = Number(params.id);
+  
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newNoteTitle, setNewNoteTitle] = useState("");
+
+  const notebook = useLiveQuery(() => db.notebooks.get(notebookId), [notebookId]);
+  const notes = useLiveQuery(() => db.notes.where({ notebookId }).sortBy('createdAt'), [notebookId]) || [];
+
+  const handleCreateNote = async () => {
+    if (!newNoteTitle.trim()) return;
+    try {
+      const id = await db.notes.add({
+        notebookId,
+        title: newNoteTitle,
+        content: `<h1>${newNoteTitle}</h1><p>Start writing here...</p>`,
+        tags: [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      setIsModalOpen(false);
+      setNewNoteTitle("");
+      router.push(`/notes/${id}`);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  if (!notebook) return <div className="p-8">Loading notebook...</div>;
 
   return (
     <div className="flex h-full relative">
@@ -25,15 +54,18 @@ export default function NotebookPage() {
           </Button>
         </div>
         <div className="overflow-y-auto h-[calc(100%-60px)]">
-          {MOCK_NOTES.map((note) => (
+          {notes.map((note) => (
             <Link key={note.id} href={`/notes/${note.id}`} className="block p-4 border-b border-[var(--paper)] hover:bg-[var(--paper)] transition-colors">
               <div className="flex justify-between items-start">
                 <h4 className="font-medium text-sm text-[var(--text-primary)] line-clamp-2">{note.title}</h4>
                 <Bookmark className="w-3 h-3 text-gray-400 shrink-0 mt-1" />
               </div>
-              <p className="text-xs text-gray-500 mt-1">{note.date}</p>
+              <p className="text-xs text-gray-500 mt-1">{note.createdAt.toLocaleDateString()}</p>
             </Link>
           ))}
+          {notes.length === 0 && (
+            <div className="p-4 text-sm text-gray-500">No notes yet.</div>
+          )}
         </div>
       </div>
 
@@ -45,17 +77,15 @@ export default function NotebookPage() {
             <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 mr-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
               <List className="w-5 h-5" />
             </button>
-            <Link href="/subjects/1" className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
+            <Link href={`/subjects/${notebook.subjectId}`} className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
               <ArrowLeft className="w-5 h-5" />
             </Link>
-            <h2 className="ml-2 font-title text-2xl font-bold text-[var(--text-primary)]">Thermodynamics</h2>
+            <h2 className="ml-2 font-title text-2xl font-bold text-[var(--text-primary)] line-clamp-1">{notebook.title}</h2>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 shrink-0">
             <Button variant="ghost" size="sm"><Search className="w-4 h-4" /></Button>
             <Button variant="ghost" size="sm"><MoreVertical className="w-4 h-4" /></Button>
-            <Link href="/notes/new">
-              <Button size="sm"><Plus className="w-4 h-4 mr-1" /> Add Note</Button>
-            </Link>
+            <Button size="sm" onClick={() => setIsModalOpen(true)}><Plus className="w-4 h-4 mr-1" /> Add Note</Button>
           </div>
         </div>
 
@@ -65,37 +95,51 @@ export default function NotebookPage() {
           
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="text-center mb-12">
-              <h1 className="font-title text-5xl text-[var(--text-primary)]">Thermodynamics</h1>
-              <p className="font-heading text-[var(--text-secondary)] mt-2">Class 11 Physics</p>
+              <h1 className="font-title text-5xl text-[var(--text-primary)]">{notebook.title}</h1>
+              <p className="font-heading text-[var(--text-secondary)] mt-2">Notebook Details</p>
             </div>
 
-            {MOCK_NOTES.map(note => (
+            {notes.map(note => (
               <Link key={note.id} href={`/notes/${note.id}`} className="block">
                 <div className="group border-b border-transparent hover:border-[var(--terracotta)]/30 transition-colors pb-4 cursor-pointer">
                   <div className="flex justify-between items-end mb-2">
                     <h3 className="text-xl font-bold font-heading text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors">
                       {note.title}
                     </h3>
-                    <span className="text-sm font-heading text-gray-500">{note.date}</span>
+                    <span className="text-sm font-heading text-gray-500">{note.createdAt.toLocaleDateString()}</span>
                   </div>
+                  {/* Extract plain text from HTML content (naively) for preview */}
                   <p className="text-[var(--text-secondary)] text-sm font-body line-clamp-2">
-                    {note.preview}
+                    {note.content.replace(/<[^>]*>?/gm, '')}
                   </p>
                 </div>
               </Link>
             ))}
             
             <div className="py-8 flex justify-center">
-              <Link href="/notes/new">
-                <Button variant="ghost" className="text-[var(--accent)] font-heading text-lg">
-                  <Plus className="w-5 h-5 mr-2" />
-                  Start writing a new note...
-                </Button>
-              </Link>
+              <Button variant="ghost" className="text-[var(--accent)] font-heading text-lg" onClick={() => setIsModalOpen(true)}>
+                <Plus className="w-5 h-5 mr-2" />
+                Start writing a new note...
+              </Button>
             </div>
           </div>
         </div>
       </div>
+
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create New Note">
+        <div className="space-y-4">
+          <Input 
+            label="Note Title" 
+            placeholder="e.g. Newton's First Law" 
+            value={newNoteTitle}
+            onChange={(e) => setNewNoteTitle(e.target.value)}
+          />
+          <div className="pt-4 flex justify-end space-x-3">
+            <Button variant="ghost" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateNote}>Create</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -6,19 +6,39 @@ import { Plus, Book, Clock, ArrowLeft, Search } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Input } from "@/components/ui/Input";
-
-const MOCK_NOTEBOOKS = [
-  { id: 1, title: "Thermodynamics", lastEdited: "2 hours ago", pages: 45 },
-  { id: 2, title: "Kinematics", lastEdited: "3 days ago", pages: 120 },
-  { id: 3, title: "Electromagnetism", lastEdited: "1 week ago", pages: 89 },
-];
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/db/schema";
+import { useState } from "react";
+import { Modal } from "@/components/ui/Modal";
 
 export default function SubjectDetailPage() {
   const params = useParams();
-  const subjectId = params.id;
+  const subjectId = Number(params.id);
   
-  // In a real app, fetch subject by ID
-  const subject = { name: "Physics", color: "sage" };
+  const subject = useLiveQuery(() => db.subjects.get(subjectId), [subjectId]);
+  const notebooks = useLiveQuery(() => db.notebooks.where({ subjectId }).toArray(), [subjectId]) || [];
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+
+  const handleCreateNotebook = async () => {
+    if (!newTitle.trim()) return;
+    try {
+      await db.notebooks.add({
+        subjectId,
+        title: newTitle,
+        coverStyle: subject?.color || "sage",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      setIsModalOpen(false);
+      setNewTitle("");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  if (!subject) return <div className="p-8">Loading subject...</div>;
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
@@ -33,10 +53,10 @@ export default function SubjectDetailPage() {
             </div>
             <div>
               <h1 className="text-3xl font-bold font-heading text-[var(--text-primary)]">{subject.name}</h1>
-              <p className="text-[var(--text-secondary)]">3 Notebooks</p>
+              <p className="text-[var(--text-secondary)]">{notebooks.length} Notebooks</p>
             </div>
           </div>
-          <Button>
+          <Button onClick={() => setIsModalOpen(true)}>
             <Plus className="w-4 h-4 mr-2" />
             New Notebook
           </Button>
@@ -48,11 +68,11 @@ export default function SubjectDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {MOCK_NOTEBOOKS.map((notebook) => (
+        {notebooks.map((notebook) => (
           <Link key={notebook.id} href={`/notebooks/${notebook.id}`}>
             <Card hoverable className="p-0 overflow-hidden group">
               {/* Notebook Cover Style */}
-              <div className="h-32 bg-[var(--accent)] relative border-b-4 border-[rgba(0,0,0,0.1)]">
+              <div className="h-32 bg-[var(--accent)] relative border-b-4 border-[rgba(0,0,0,0.1)]" style={{ backgroundColor: `var(--${notebook.coverStyle})` }}>
                 <div className="absolute left-4 top-0 bottom-0 w-8 flex flex-col justify-evenly opacity-30">
                   {/* Spine binding effect */}
                   {[...Array(6)].map((_, i) => (
@@ -70,16 +90,36 @@ export default function SubjectDetailPage() {
               <div className="p-5 flex justify-between items-center bg-[var(--card)]">
                 <div className="flex items-center text-xs text-[var(--text-secondary)]">
                   <Clock className="w-3 h-3 mr-1" />
-                  {notebook.lastEdited}
+                  {notebook.updatedAt.toLocaleDateString()}
                 </div>
                 <span className="text-xs font-medium text-gray-500 bg-[var(--paper)] px-2 py-1 rounded">
-                  {notebook.pages} pages
+                  Notes inside
                 </span>
               </div>
             </Card>
           </Link>
         ))}
+        {notebooks.length === 0 && (
+          <div className="col-span-full py-12 text-center text-[var(--text-secondary)] border-2 border-dashed border-[var(--paper)] rounded-2xl">
+            No notebooks here yet. Click "New Notebook".
+          </div>
+        )}
       </div>
+
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create New Notebook">
+        <div className="space-y-4">
+          <Input 
+            label="Notebook Title" 
+            placeholder="e.g. Thermodynamics Chapter 1" 
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+          />
+          <div className="pt-4 flex justify-end space-x-3">
+            <Button variant="ghost" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateNotebook}>Create</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
